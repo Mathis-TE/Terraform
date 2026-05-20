@@ -1,0 +1,39 @@
+*.ipynb_checkpoints
+ 
+# Données brutes (trop lourdes pour git — utiliser Git LFS si besoin)
+backend/data/raw/
+backend/data/processed/
+*.csv.gz
+*.parquet
+ 
+# Modèles ML sauvegardés (idem)
+backend/ml/models/*.pkl
+backend/ml/models/*.joblib
+ 
+# Variables d'environnement
+.env
+.env.local
+.env.*.local
+ 
+# LM Studio
+*.gguf
+*.ggml
+ 
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+ 
+# OS
+.DS_Store
+Thumbs.db
+ 
+# Next.js
+frontend/.next/
+frontend/node_modules/
+frontend/out/
+ 
+# Docker
+*.log
+ 

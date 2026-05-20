@@ -15,48 +15,60 @@ EstimIA combine la précision du calcul statistique et l'intelligence d'un modè
 ## Architecture
  
 ```
-Frontend Next.js (AWS / Vercel)
+Agent immobilier (saisit adresse + critères)
         │
-        │  HTTP JSON (adresse + critères)
         ▼
-Backend Python FastAPI
+Frontend — Streamlit + Folium (carte interactive)
+        │
+        │  Appels Python directs
+        ▼
+Backend — Python FastAPI
         │
         ├──► Moteur ML (Scikit-learn)
-        │       ├── Régression prix (RandomForest / XGBoost)
+        │       ├── Régression prix (RandomForest / KNN)
         │       └── Clustering biens (K-Means)
         │
-        ├──► Agent IA (Strands framework)
-        │       └── LM Studio — modèle GGUF quantisé local
+        ├──► tools.py (outils de l'agent)
+        │       ├── estimer_prix()
+        │       └── obtenir_risques_climatiques()
         │
-        └──► MCP datagouv
-                ├── DVF (transactions foncières)
-                ├── DPE (diagnostics énergétiques)
-                └── Géorisques
+        └──► Agent IA (Ollama + LangChain)
+                └── Modèle local Llama 3 — synthèse rapport
+ 
+Sources de données (data.gouv.fr — open data officiel)
+        ├── DVF (transactions foncières)
+        ├── DPE (diagnostics énergétiques — ADEME)
+        ├── Géorisques (API officielle)
+        └── Délinquance (Interstats)
+ 
+Déploiement
+        └── Docker → AWS EC2 
 ```
  
 ### Choix techniques justifiés
  
 | Composant | Choix | Justification |
 |-----------|-------|---------------|
-| Frontend | Next.js + React | SSR natif, déploiement Vercel gratuit |
+| Frontend | Streamlit + streamlit-folium | Tout en Python, carte interactive, démo jury immédiate |
+| Carte | Folium | Clic → latitude/longitude automatique |
 | Backend | Python FastAPI | Async, compatible ML, léger |
-| ML | Scikit-learn + XGBoost | Régression tabulaire, pas de GPU requis |
-| LLM | LM Studio (GGUF local) | Zéro coût API, RGPD natif, données non exposées |
-| Modèle | Mistral 7B / Llama 3.1 8B Q4_K_M | 8B params : bon PC ; 12–24B : RTX 3090/4090 |
-| Orchestration agent | Strands (AWS) | Framework agent Python open source |
-| Données | data.gouv.fr + MCP datagouv | Open data officiel, gratuit |
-| Hébergement | Vercel (front) + EC2 t3.micro (back) | Free Tier AWS 12 mois |
+| ML | Scikit-learn (RandomForest / KNN) | Adapté aux données spatiales, pas de GPU requis |
+| LLM | Ollama (Llama 3 local) | Zéro coût API, RGPD natif, données non exposées |
+| Orchestration | LangChain ou LlamaIndex | Liaison LLM ↔ tools.py |
+| Données | data.gouv.fr + API Géorisques | Open data officiel, gratuit |
+| Déploiement | Docker + AWS EC2 | Scalable, Free Tier 12 mois |
  
 ---
  
 ## Stack technique
  
-- **Frontend** : Next.js 14, React, Tailwind CSS
+- **Frontend** : Streamlit, streamlit-folium, Folium
 - **Backend** : Python 3.11+, FastAPI, Uvicorn
-- **Machine Learning** : Scikit-learn, XGBoost, Pandas, NumPy
-- **Agent IA** : Strands framework, LM Studio (API format OpenAI)
-- **Données** : MCP datagouv, API Géorisques, data.gouv.fr
-- **Infra** : Docker, GitHub Actions, AWS EC2 / Vercel
+- **Machine Learning** : Scikit-learn, Pandas, NumPy, GeoPandas
+- **Agent IA** : Ollama (Llama 3), LangChain ou LlamaIndex
+- **Données** : DVF data.gouv.fr, DPE ADEME, API Géorisques, Délinquance Interstats
+- **Infra** : Docker, AWS EC2, Ngrok (hybride si besoin)
+- **Qualité code** : Ruff (linter + formatter)
 ---
  
 ## Features du modèle ML

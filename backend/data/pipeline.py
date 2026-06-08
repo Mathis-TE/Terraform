@@ -45,9 +45,26 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 DEPT = "75"
 
+
+def get_raw_file_path(filename: str) -> Path:
+    """
+    Recherche un fichier de données brutes.
+    1. Dans backend/data/raw/
+    2. En fallback, dans le dossier racine data/raw/
+    """
+    local_path = (Path(__file__).parent / "raw" / filename).resolve()
+    if local_path.exists():
+        return local_path
+    
+    root_path = (Path(__file__).parents[2] / "data" / "raw" / filename).resolve()
+    if root_path.exists():
+        return root_path
+        
+    return local_path
+
 # DVF — fichiers annuels sur data.gouv.fr (format CSV)
 DVF_URL = (
-    "https://files.data.gouv.fr/geo-dvf/latest/csv/2024/departements/{dept}.csv.gz"
+    "https://files.data.gouv.fr/geo-dvf/latest/csv/{year}/departements/{dept}.csv.gz"
 )
 
 # DPE Logements existants — data.ademe.fr (export CSV complet)
@@ -73,18 +90,25 @@ DELINQUANCE_URL = (
 # 1. Téléchargement DVF
 # ---------------------------------------------------------------------------
 
-def download_dvf(dept: str, skip: bool = False) -> Path:
-    dest = DATA_DIR / f"dvf_{dept}.csv.gz"
+def download_dvf(dept: str, year: int, skip: bool = False) -> Path | None:
+    dest = DATA_DIR / f"dvf_{dept}_{year}.csv.gz"
     if skip and dest.exists():
-        log.info("DVF déjà présent, skip téléchargement")
+        log.info(f"DVF {dept} {year} déjà présent, skip téléchargement")
         return dest
 
-    url = DVF_URL.format(dept=dept)
-    log.info(f"Téléchargement DVF {dept} → {dest.name}")
+    url = DVF_URL.format(year=year, dept=dept)
+    log.info(f"Téléchargement DVF {dept} {year} → {dest.name}")
     log.info(f"  URL : {url}")
 
-    r = requests.get(url, stream=True, timeout=120)
-    r.raise_for_status()
+    try:
+        r = requests.get(url, stream=True, timeout=120)
+        if r.status_code == 404:
+            log.warning(f"  Année {year} non disponible pour le département {dept} (404 Not Found).")
+            return None
+        r.raise_for_status()
+    except Exception as e:
+        log.warning(f"  Erreur lors du téléchargement pour {year} : {e}")
+        return None
 
     total = int(r.headers.get("content-length", 0))
     downloaded = 0
@@ -175,6 +199,11 @@ def clean_dvf(df: pd.DataFrame) -> pd.DataFrame:
     # Code INSEE = code_commune (5 chiffres)
     df["code_insee"] = df["code_commune"].str.zfill(5)
 
+    # Formater le code postal (chaîne de 5 caractères sans décimale)
+    if "code_postal" in df.columns:
+        df["code_postal"] = df["code_postal"].astype(str).str.replace(r'\.0$', '', regex=True)
+        df["code_postal"] = df["code_postal"].apply(lambda x: x.zfill(5) if x not in ['nan', 'None', ''] else '')
+
     # Renommer pour clarté
     df = df.rename(columns={
         "valeur_fonciere": "prix",
@@ -192,7 +221,7 @@ def clean_dvf(df: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def load_dpe(dept: str, skip: bool = False) -> pd.DataFrame:
-    dest = DATA_DIR / f"dpe_{dept}.csv"
+    dest = get_raw_file_path(f"dpe_{dept}.csv")
 
     if not dest.exists():
         log.warning("  Fichier DPE absent — poursuite sans données DPE")
@@ -236,16 +265,21 @@ def load_dpe(dept: str, skip: bool = False) -> pd.DataFrame:
 
 def fetch_georisques(codes_insee: list[str]) -> pd.DataFrame:
     """
-    Interroge l'API Géorisques pour chaque code INSEE unique.
+    Interroge l'API Géorisques pour chaque code INSEE unique de manière parallélisée.
     Retourne un DataFrame code_insee → score_risque (0–10).
     """
+    import concurrent.futures
     dest = DATA_DIR / "georisques_cache.json"
 
-    # Charger le cache si existant
+    # Charger le cache si existant (et filtrer les anciennes valeurs à 0.0/None erronées dues au bug précédent)
     cache: dict = {}
     if dest.exists():
-        with open(dest) as f:
-            cache = json.load(f)
+        try:
+            with open(dest) as f:
+                raw_cache = json.load(f)
+                cache = {k: v for k, v in raw_cache.items() if v is not None and v != 0.0}
+        except Exception as e:
+            log.warning(f"Erreur chargement cache géorisques : {e}")
 
     results = []
     codes_uniques = list(set(codes_insee))
@@ -253,38 +287,54 @@ def fetch_georisques(codes_insee: list[str]) -> pd.DataFrame:
 
     log.info(f"Géorisques : {len(codes_uniques)} communes ({len(nouveaux)} à fetcher)")
 
-    for i, insee in enumerate(nouveaux):
+    def fetch_single(insee: str) -> tuple[str, float | None]:
         try:
+            insee_query = "75056" if insee.startswith("751") else insee
             r = requests.get(
-                GEORISQUES_URL.format(insee=insee),
+                GEORISQUES_URL.format(insee=insee_query),
                 timeout=10,
             )
             r.raise_for_status()
             data = r.json()
 
-            # Compter le nombre de types de risques distincts (proxy du score)
-            risques = data.get("response", [])
-            nb_risques = len(risques) if isinstance(risques, list) else 0
+            results_list = data.get("data", [])
+            nb_risques = 0
+            if isinstance(results_list, list) and len(results_list) > 0:
+                risques_detail = results_list[0].get("risques_detail", [])
+                if isinstance(risques_detail, list):
+                    nb_risques = len(risques_detail)
 
-            # Normaliser sur 10 (max observé ~8 types de risques)
             score = min(round(nb_risques / 8 * 10, 1), 10.0)
-            cache[insee] = score
-
+            return insee, score
         except Exception:
-            cache[insee] = None
+            return insee, None
 
-        # Sauvegarder le cache toutes les 20 requêtes
-        if (i + 1) % 20 == 0:
-            with open(dest, "w") as f:
-                json.dump(cache, f)
-            log.info(f"  Géorisques : {i+1}/{len(nouveaux)} communes traitées")
-
-        # Pause légère pour ne pas surcharger l'API
-        time.sleep(0.1)
+    if nouveaux:
+        # Utiliser ThreadPoolExecutor avec 15 workers pour paralléliser les appels d'API
+        with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
+            future_to_insee = {executor.submit(fetch_single, ins): ins for ins in nouveaux}
+            
+            count = 0
+            for future in concurrent.futures.as_completed(future_to_insee):
+                insee, score = future.result()
+                cache[insee] = score
+                count += 1
+                
+                # Sauvegarder le cache régulièrement
+                if count % 50 == 0 or count == len(nouveaux):
+                    try:
+                        with open(dest, "w") as f:
+                            json.dump(cache, f)
+                    except Exception as e:
+                        log.warning(f"Erreur lors de l'écriture du cache géorisques : {e}")
+                    log.info(f"  Géorisques : {count}/{len(nouveaux)} communes traitées en parallèle")
 
     # Sauvegarde finale
-    with open(dest, "w") as f:
-        json.dump(cache, f)
+    try:
+        with open(dest, "w") as f:
+            json.dump(cache, f)
+    except Exception as e:
+        log.warning(f"Erreur lors de l'écriture finale du cache géorisques : {e}")
 
     # Construire le DataFrame depuis le cache complet
     for code in codes_uniques:
@@ -300,43 +350,74 @@ def fetch_georisques(codes_insee: list[str]) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def load_delinquance(dept: str, skip: bool = False) -> pd.DataFrame:
-    dest = DATA_DIR / "delinquance.xlsx"
+    # 1. Rechercher d'abord le fichier CSV officiel (données propres et récentes)
+    csv_dest = get_raw_file_path("donnee-dep-data.gouv-2025-geographie2025-produit-le2026-01-22.csv")
+    if csv_dest.exists():
+        log.info("Chargement délinquance depuis le fichier CSV officiel…")
+        try:
+            df = pd.read_csv(csv_dest, sep=";", dtype=str)
+            df['taux_pour_mille'] = df['taux_pour_mille'].astype(str).str.replace(',', '.').astype(float)
+            
+            # Nettoyer et filtrer pour le département demandé
+            dept_clean = dept.lstrip("0")
+            df['Code_departement_clean'] = df['Code_departement'].astype(str).str.lstrip("0").str.strip()
+            
+            df_dept = df[df['Code_departement_clean'] == dept_clean]
+            if not df_dept.empty:
+                # Prendre le taux moyen pour l'année la plus récente disponible
+                annee_max = df_dept['annee'].astype(int).max()
+                df_rec = df_dept[df_dept['annee'].astype(int) == annee_max]
+                mean_taux = df_rec['taux_pour_mille'].mean()
+                
+                # Normaliser le score sur 10 (taux moyen / 30 * 10)
+                score = min(round(mean_taux / 30 * 10, 1), 10.0)
+                log.info(f"  Score délinquance département {dept} (taux moyen {mean_taux:.2f} en {annee_max}) : {score}/10")
+                return pd.DataFrame([{"departement": dept, "score_delinquance": score}])
+        except Exception as e:
+            log.warning(f"  Erreur lecture CSV délinquance : {e}")
 
-    if not dest.exists():
-        log.warning("  Fichier délinquance absent — score=5.0 par défaut")
-        return pd.DataFrame([{"departement": dept, "score_delinquance": 5.0}])
+    # 2. Fallback sur l'Excel local si disponible
+    dest = get_raw_file_path("delinquance.xlsx")
+    if dest.exists():
+        log.info("Chargement délinquance depuis fichier Excel local…")
+        try:
+            # On tente de charger l'une des feuilles contenant des données réelles
+            df = pd.read_excel(dest, sheet_name='Services PN 2021', dtype=str)
+            
+            dept_col = next((c for c in df.columns if "dep" in c.lower()), None)
+            if not dept_col:
+                raise ValueError(f"Colonne département introuvable")
 
-    log.info("Chargement délinquance depuis fichier local…")
-    try:
-        df = pd.read_excel(dest, dtype=str)
-        
-        dept_col = next((c for c in df.columns if "dep" in c.lower()), None)
-        if not dept_col:
-            raise ValueError(f"Colonne département introuvable. Colonnes : {list(df.columns)}")
+            df[dept_col] = df[dept_col].astype(str).str.lstrip("0").str.strip()
+            dept_clean = dept.lstrip("0")
 
-        df[dept_col] = df[dept_col].astype(str).str.lstrip("0").str.strip()
-        dept_clean = dept.lstrip("0")
+            row = df[df[dept_col] == dept_clean]
+            if row.empty:
+                raise ValueError(f"Département {dept} introuvable")
 
-        row = df[df[dept_col] == dept_clean]
-        if row.empty:
-            raise ValueError(f"Département {dept} introuvable")
+            num_cols = []
+            for c in df.columns:
+                if c == dept_col:
+                    continue
+                val = str(row[c].iloc[0]).replace(",", "").replace(".", "").strip()
+                if val.isdigit():
+                    num_cols.append(c)
 
-        num_cols = [
-            c for c in df.columns
-            if c != dept_col and row[c].iloc[0].replace(",", "").replace(".", "").isdigit()
-        ]
-        if num_cols:
-            taux = float(str(row[num_cols[-1]].iloc[0]).replace(",", "."))
-            score = min(round(taux / 30 * 10, 1), 10.0)
-        else:
+            if num_cols:
+                taux = float(str(row[num_cols[-1]].iloc[0]).replace(",", "."))
+                score = min(round(taux / 30 * 10, 1), 10.0)
+            else:
+                score = 5.0
+            
+            log.info(f"  Score délinquance département {dept} : {score}/10")
+            return pd.DataFrame([{"departement": dept, "score_delinquance": score}])
+
+        except Exception as e:
+            log.warning(f"  Erreur lecture Excel délinquance : {e} — score=5.0")
             score = 5.0
 
-    except Exception as e:
-        log.warning(f"  Erreur lecture délinquance : {e} — score=5.0")
-        score = 5.0
-
-    log.info(f"  Score délinquance département {dept} : {score}/10")
-    return pd.DataFrame([{"departement": dept, "score_delinquance": score}])
+    log.warning("  Fichiers délinquance absents — score=5.0 par défaut")
+    return pd.DataFrame([{"departement": dept, "score_delinquance": 5.0}])
 
 
 # ---------------------------------------------------------------------------
@@ -453,10 +534,29 @@ def quality_report(df: pd.DataFrame) -> None:
 def run(dept: str = "75", skip_download: bool = False) -> Path:
     log.info(f"=== EstimIA Pipeline — Département {dept} ===")
 
-    # 1. DVF
-    dvf_path = download_dvf(dept, skip=skip_download)
-    dvf_raw = load_dvf(dvf_path, dept)
-    dvf_clean = clean_dvf(dvf_raw)
+    # 1. DVF (Multi-années à partir de 2020)
+    import datetime
+    current_year = datetime.datetime.now().year
+    years = list(range(2020, current_year + 1))
+    
+    dvf_cleans = []
+    for year in years:
+        dvf_path = download_dvf(dept, year, skip=skip_download)
+        if dvf_path is None or not dvf_path.exists():
+            continue
+        try:
+            dvf_raw = load_dvf(dvf_path, dept)
+            df_year_clean = clean_dvf(dvf_raw)
+            if not df_year_clean.empty:
+                dvf_cleans.append(df_year_clean)
+        except Exception as e:
+            log.error(f"  Erreur lors de la lecture/nettoyage de l'année {year} : {e}")
+
+    if not dvf_cleans:
+        raise ValueError(f"Aucune donnée DVF n'a pu être chargée pour le département {dept}")
+
+    dvf_clean = pd.concat(dvf_cleans, ignore_index=True)
+    log.info(f"  DVF total après concaténation et nettoyage multi-années : {len(dvf_clean):,} lignes")
 
     # 2. DPE
     dpe = load_dpe(dept, skip=skip_download)

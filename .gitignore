@@ -37,3 +37,9 @@ frontend/out/
 # Docker
 *.log
  
+# pkl
+*.pkl
+
+#pdf 
+Projet annuel 4IABD.pdf
+SyllabusDuProjet (1).pdf

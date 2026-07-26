@@ -1,0 +1,131 @@
+name: CD — Déploiement AWS ECS Fargate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/cd-aws.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: cd-aws
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECS_CLUSTER: ${{ vars.AWS_ECS_CLUSTER }}
+
+jobs:
+  deploy-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+
+      - name: Build & push image backend
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPOSITORY: ${{ vars.AWS_ECR_BACKEND_REPO }}
+        run: |
+          IMAGE="$REGISTRY/$REPOSITORY:${{ github.sha }}"
+          docker build -t "$IMAGE" -t "$REGISTRY/$REPOSITORY:latest" ./backend
+          docker push "$IMAGE"
+          docker push "$REGISTRY/$REPOSITORY:latest"
+
+      - name: Déployer la nouvelle image sur le service ECS backend
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPOSITORY: ${{ vars.AWS_ECR_BACKEND_REPO }}
+          FAMILY: ${{ vars.AWS_ECS_BACKEND_TASK_FAMILY }}
+          SERVICE: ${{ vars.AWS_ECS_BACKEND_SERVICE }}
+        run: |
+          IMAGE="$REGISTRY/$REPOSITORY:${{ github.sha }}"
+
+          aws ecs describe-task-definition --task-definition "$FAMILY" \
+            --query 'taskDefinition' > task-def.json
+
+          NEW_TASK_DEF=$(jq --arg IMAGE "$IMAGE" \
+            '.containerDefinitions[0].image = $IMAGE
+             | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+            task-def.json)
+
+          NEW_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TASK_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' -o text)
+
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "$SERVICE" \
+            --task-definition "$NEW_ARN" \
+            --force-new-deployment
+
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+
+      - name: Build & push image frontend
+        # NEXT_PUBLIC_API_URL est figé dans le bundle JS au build : l'URL de
+        # l'ALB (port backend) est stable dès la création de l'infra, donc
+        # définie une fois pour toutes en variable de repo (pas besoin de la
+        # relire dynamiquement à chaque déploiement, contrairement à Container
+        # Apps où le FQDN n'existe qu'après le premier déploiement).
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPOSITORY: ${{ vars.AWS_ECR_FRONTEND_REPO }}
+          BACKEND_URL: ${{ vars.AWS_BACKEND_URL }}
+        run: |
+          IMAGE="$REGISTRY/$REPOSITORY:${{ github.sha }}"
+          docker build \
+            --build-arg NEXT_PUBLIC_API_URL="$BACKEND_URL" \
+            -t "$IMAGE" \
+            -t "$REGISTRY/$REPOSITORY:latest" \
+            ./frontend
+          docker push "$IMAGE"
+          docker push "$REGISTRY/$REPOSITORY:latest"
+
+      - name: Déployer la nouvelle image sur le service ECS frontend
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPOSITORY: ${{ vars.AWS_ECR_FRONTEND_REPO }}
+          FAMILY: ${{ vars.AWS_ECS_FRONTEND_TASK_FAMILY }}
+          SERVICE: ${{ vars.AWS_ECS_FRONTEND_SERVICE }}
+        run: |
+          IMAGE="$REGISTRY/$REPOSITORY:${{ github.sha }}"
+
+          aws ecs describe-task-definition --task-definition "$FAMILY" \
+            --query 'taskDefinition' > task-def.json
+
+          NEW_TASK_DEF=$(jq --arg IMAGE "$IMAGE" \
+            '.containerDefinitions[0].image = $IMAGE
+             | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+            task-def.json)
+
+          NEW_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TASK_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' -o text)
+
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "$SERVICE" \
+            --task-definition "$NEW_ARN" \
+            --force-new-deployment

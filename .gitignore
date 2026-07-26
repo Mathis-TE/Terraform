@@ -47,3 +47,11 @@ PA.pdf
 
 #__pycache__
 __pycache__/
+
+# Terraform
+infra/**/.terraform/
+infra/**/*.tfstate
+infra/**/*.tfstate.*
+infra/**/*.tfvars
+infra/**/*.tfvars.json
+infra/**/crash.log

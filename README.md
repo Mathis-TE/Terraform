@@ -50,7 +50,8 @@ Backend — Python FastAPI            (port 8000)
 - Fetch API
 
 **Infra**
-- Docker, AWS EC2 t3.micro (Free Tier)
+- Docker, Terraform — déployable sur **AWS** (ECS Fargate, ECR, S3, ALB) et/ou **Azure** (Container Apps, ACR, Blob Storage)
+- CI/CD : GitHub Actions
 
 ---
 
@@ -129,8 +130,27 @@ estimia/
 │   ├── carte_prix_idf.html
 │   └── fig_evolution_prix.html
 │
-├── Dockerfile
-├── docker-compose.yml
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                  # Lint + build backend/frontend sur chaque PR
+│       ├── cd-aws.yml              # Build, push ECR, déploiement ECS Fargate
+│       └── cd-azure.yml            # Build, push ACR, déploiement Container Apps
+│
+├── infra/                          # Terraform — deux clouds indépendants
+│   ├── aws/                        # provisioning AWS (voir docs/aws-setup.md)
+│   │   ├── providers.tf
+│   │   ├── variables.tf
+│   │   ├── main.tf
+│   │   └── outputs.tf
+│   └── azure/                      # provisioning Azure (voir docs/azure-setup.md)
+│       ├── providers.tf
+│       ├── variables.tf
+│       ├── main.tf
+│       └── outputs.tf
+│
+├── backend/Dockerfile
+├── frontend/Dockerfile
+├── docker-compose.yml               # Lancement local complet (backend + frontend)
 ├── pyproject.toml                  # Config Ruff
 └── .gitignore
 ```
@@ -247,11 +267,46 @@ Application : `http://localhost:3000`
 
 ---
 
-### Docker (déploiement complet en une commande)
+### Docker (déploiement local complet en une commande)
 
 ```bash
 docker-compose up --build
 ```
+
+- Frontend : `http://localhost:3000`
+- Backend : `http://localhost:8000`
+
+Pour que l'estimation ML fonctionne, placez les 3 fichiers `.pkl` générés à
+l'étape 4-5 dans `backend/model/` : `docker-compose.yml` monte ce dossier en
+volume dans le conteneur backend (pas besoin d'AWS/Azure en local).
+`backend/scripts/download_model.py` détecte automatiquement, au démarrage,
+lequel des deux jeux de variables d'environnement (AWS ou Azure) est
+renseigné.
+
+---
+
+## CI/CD & déploiement cloud (AWS et/ou Azure)
+
+Le projet est déployable indépendamment sur **AWS** ou **Azure** — les deux
+infras Terraform et les deux workflows CI/CD cohabitent sans dépendre l'un de
+l'autre ; utilisez l'un, l'autre, ou les deux en parallèle.
+
+- **CI** (`.github/workflows/ci.yml`) : à chaque push/PR, installe les
+  dépendances, vérifie que l'API s'importe sans erreur, lint + build le
+  frontend, et fait un build Docker à blanc des deux images. Commun aux deux clouds.
+- **CD AWS** (`.github/workflows/cd-aws.yml`, [docs/aws-setup.md](docs/aws-setup.md)) :
+  build + push sur Amazon ECR, patch de la task definition ECS, puis
+  `aws ecs update-service` sur les 2 services Fargate. Infra (`infra/aws/`) :
+  ECR, bucket S3 (modèle ML), cluster ECS Fargate, ALB (2 listeners : 80 →
+  frontend, 8080 → backend), rôles IAM.
+- **CD Azure** (`.github/workflows/cd-azure.yml`, [docs/azure-setup.md](docs/azure-setup.md)) :
+  build + push sur Azure Container Registry, puis `az containerapp update`
+  sur les 2 Container Apps. Infra (`infra/azure/`) : ACR, Storage Account
+  (modèle ML), environnement Container Apps, 2 Container Apps.
+
+L'agent conversationnel s'appuie uniquement sur le `FallbackAgent`
+déterministe en production, quel que soit le cloud (Ollama n'est pas déployé —
+trop lourd pour les paliers de calcul les plus bas des deux plateformes).
 
 ---
 
@@ -332,7 +387,7 @@ python generate_eda_plots.py
 | `feature/agent-tools` | tools.py + lookup table ✅ |
 | `feature/agent-llm` | LangChain + FallbackAgent ✅ |
 | `feature/frontend` | Next.js ✅ |
-| `feature/deployment` | Docker + AWS 🔲 |
+| `feature/deployment` | Docker + AWS/Azure ✅ |
 
 ### Format des commits
 
@@ -355,7 +410,7 @@ chore: update requirements.txt
 - [x] Phase 3 — tools.py + table de correspondance géographique
 - [x] Phase 4 — Agent LangChain + FallbackAgent déterministe
 - [x] Phase 5 — Frontend Next.js (formulaire, carte Leaflet, chatbot)
-- [ ] Phase 6 — Déploiement AWS EC2 + Docker
+- [x] Phase 6 — Dockerisation + CI/CD GitHub Actions + déploiement AWS ECS Fargate et Azure Container Apps (Terraform)
 
 ---
 

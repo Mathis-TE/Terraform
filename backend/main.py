@@ -25,18 +25,21 @@ log = logging.getLogger(__name__)
 
 DEPT_IDF = ["75", "77", "78", "91", "92", "93", "94", "95"]
 
+
 def main():
-    parser = argparse.ArgumentParser(description="EstimIA — Extraction et Fusion Île-de-France")
+    parser = argparse.ArgumentParser(
+        description="EstimIA — Extraction et Fusion Île-de-France"
+    )
     parser.add_argument(
         "--depts",
         nargs="+",
         default=DEPT_IDF,
-        help="Liste des départements à extraire (par défaut tous ceux de l'Île-de-France)"
+        help="Liste des départements à extraire (par défaut tous ceux de l'Île-de-France)",
     )
     parser.add_argument(
         "--skip-download",
         action="store_true",
-        help="Passer le téléchargement des fichiers s'ils sont déjà présents"
+        help="Passer le téléchargement des fichiers s'ils sont déjà présents",
     )
     args = parser.parse_args()
 
@@ -52,7 +55,9 @@ def main():
             output_file = run_pipeline(dept=dept, skip_download=args.skip_download)
             generated_files.append((dept, output_file))
         except Exception as e:
-            log.error(f"Erreur lors du traitement du département {dept} : {e}", exc_info=True)
+            log.error(
+                f"Erreur lors du traitement du département {dept} : {e}", exc_info=True
+            )
 
     if not generated_files:
         log.error("Aucun fichier n'a été généré. Arrêt de la fusion.")
@@ -66,8 +71,8 @@ def main():
             try:
                 df_dept = pd.read_csv(
                     filepath,
-                    dtype={'code_postal': str, 'code_insee': str, 'departement': str},
-                    low_memory=False
+                    dtype={"code_postal": str, "code_insee": str, "departement": str},
+                    low_memory=False,
                 )
                 # S'assurer que le département est stocké proprement
                 df_dept["departement"] = str(dept).zfill(2)
@@ -79,9 +84,11 @@ def main():
         df_merged = pd.concat(dfs, ignore_index=True)
         merged_filepath = processed_dir / "dataset_propre.csv"
         df_merged.to_csv(merged_filepath, index=False, encoding="utf-8")
-        
+
         size_mb = merged_filepath.stat().st_size / 1e6
-        log.info(f"\n✅ Fusion réussie ! Fichier global enregistré sous : {merged_filepath}")
+        log.info(
+            f"\n✅ Fusion réussie ! Fichier global enregistré sous : {merged_filepath}"
+        )
         log.info(f"  Taille totale : {size_mb:.2f} MB")
         log.info(f"  Nombre de lignes cumulées : {len(df_merged):,}")
 
@@ -93,14 +100,19 @@ def main():
         for dept in args.depts:
             count = (df_merged["departement"] == dept).sum()
             print(f"  - Département {dept:<3}       : {count:>10,} lignes")
-        print(f"  Appartements            : {(df_merged['type_bien']=='Appartement').sum():>10,}")
-        print(f"  Maisons                 : {(df_merged['type_bien']=='Maison').sum():>10,}")
+        print(
+            f"  Appartements            : {(df_merged['type_bien']=='Appartement').sum():>10,}"
+        )
+        print(
+            f"  Maisons                 : {(df_merged['type_bien']=='Maison').sum():>10,}"
+        )
         print(f"  Prix moyen global       : {df_merged['prix'].mean():>10,.0f} €")
         print(f"  Prix/m² moyen global    : {df_merged['prix_m2'].mean():>10,.0f} €/m²")
         print(f"  Valeurs manquantes      : {df_merged.isna().sum().sum():>10,}")
         print("=" * 65 + "\n")
     else:
         log.error("Aucune donnée valide à fusionner.")
+
 
 if __name__ == "__main__":
     main()

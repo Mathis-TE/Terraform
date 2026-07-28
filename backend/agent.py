@@ -16,14 +16,19 @@ try:
     from langchain.tools import tool
     from langchain.agents import create_react_agent, AgentExecutor
     from langchain_core.prompts import PromptTemplate
+
     HAS_LANGCHAIN = True
 except ImportError:
     # Definition d'un mock minimaliste pour eviter les crashs de syntaxe
     def tool(func):
         return func
-    print("[WARNING] LangChain ou LangChain-Community n'est pas installe. Le mode ReAct Agent ne sera pas disponible.")
+
+    print(
+        "[WARNING] LangChain ou LangChain-Community n'est pas installe. Le mode ReAct Agent ne sera pas disponible."
+    )
 
 # --- Definition de l'Outil pour LangChain ---
+
 
 @tool
 def calculateur_immobilier(input_string: str) -> str:
@@ -33,24 +38,27 @@ def calculateur_immobilier(input_string: str) -> str:
     Exemple d'entree : 65,3,92100,Appartement
     """
     try:
-        parametres = input_string.split(',')
+        parametres = input_string.split(",")
         surface = int(parametres[0].strip())
         pieces = int(parametres[1].strip())
         code_postal = parametres[2].strip()
         type_bien = parametres[3].strip()
-        
+
         # Appeler le moteur ML (return_dict=False renvoie la version rédigée détaillée)
         return outil_estimation_ml(
-            surface=surface, 
-            pieces=pieces, 
-            code_postal=code_postal, 
+            surface=surface,
+            pieces=pieces,
+            code_postal=code_postal,
             type_bien=type_bien,
-            return_dict=False
+            return_dict=False,
         )
     except Exception as e:
-        return ("Erreur de format. Demande poliment a l'utilisateur de preciser les 4 parametres requis "
-                "dans l'ordre : la surface (m2), le nombre de pieces, le code postal de 5 chiffres "
-                "en Ile-de-France, et le type de bien (Maison ou Appartement).")
+        return (
+            "Erreur de format. Demande poliment a l'utilisateur de preciser les 4 parametres requis "
+            "dans l'ordre : la surface (m2), le nombre de pieces, le code postal de 5 chiffres "
+            "en Ile-de-France, et le type de bien (Maison ou Appartement)."
+        )
+
 
 outils = [calculateur_immobilier]
 
@@ -63,7 +71,7 @@ agent_logic = None
 agent_executor = None
 
 if HAS_LANGCHAIN:
-    # Par défaut, on cherche Ollama en local. Si le port change ou si LM Studio est utilisé, 
+    # Par défaut, on cherche Ollama en local. Si le port change ou si LM Studio est utilisé,
     # on peut adapter la base_url via l'environnement.
     try:
         llm = Ollama(model="llama3", temperature=0.2, timeout=10)
@@ -104,30 +112,34 @@ Thought:{agent_scratchpad}"""
                 agent=agent_logic,
                 tools=outils,
                 verbose=True,
-                handle_parsing_errors=True
+                handle_parsing_errors=True,
             )
     except Exception as e:
         print(f"[WARNING] Erreur d'initialisation de la chaine d'agent : {e}")
 
 # --- Agent de Secours Déterministe et Robuste (FallbackAgent) ---
 
+
 class FallbackAgent:
     """
     Moteur d'analyse statique de secours si le LLM local est injoignable.
-    Analyse le message de l'utilisateur, extrait les critères immobiliers, 
+    Analyse le message de l'utilisateur, extrait les critères immobiliers,
     et produit une réponse structurée et personnalisée de qualité professionnelle.
     """
-    
+
     @staticmethod
     def solve(message: str) -> str:
         msg = message.lower()
-        
+
         # Extraction de la surface (m2 ou m²)
-        surface_match = re.search(r'(\d+)\s*(?:m2|m²|metre|mètre)', msg)
+        surface_match = re.search(r"(\d+)\s*(?:m2|m²|metre|mètre)", msg)
         # Extraction du nombre de pièces (pieces ou pièces)
-        pieces_match = re.search(r'(\d+)\s*(?:piece|pièce|p\b)', msg)
+        pieces_match = re.search(r"(\d+)\s*(?:piece|pièce|p\b)", msg)
         # Extraction du code postal (5 chiffres)
-        cp_match = re.search(r'\b(75\d{3}|77\d{3}|78\d{3}|91\d{3}|92\d{3}|93\d{3}|94\d{3}|95\d{3})\b', msg)
+        cp_match = re.search(
+            r"\b(75\d{3}|77\d{3}|78\d{3}|91\d{3}|92\d{3}|93\d{3}|94\d{3}|95\d{3})\b",
+            msg,
+        )
         # Extraction du type de bien
         type_bien = "Appartement"  # Par défaut
         if "maison" in msg or "pavillon" in msg or "villa" in msg:
@@ -141,25 +153,25 @@ class FallbackAgent:
                 surface = int(surface_match.group(1))
                 pieces = int(pieces_match.group(1))
                 code_postal = cp_match.group(1)
-                
+
                 # S'assurer que les valeurs sont dans des bornes valides pour le modèle
                 surface = max(10, min(300, surface))
                 pieces = max(1, min(10, pieces))
-                
+
                 # Lancement de l'estimation ML
                 res_ml = outil_estimation_ml(
                     surface=surface,
                     pieces=pieces,
                     code_postal=code_postal,
                     type_bien=type_bien,
-                    return_dict=True
+                    return_dict=True,
                 )
-                
+
                 if "erreur" in res_ml:
                     return f"Désolé, une erreur technique est survenue lors de l'estimation : {res_ml['erreur']}"
-                
+
                 # Formatage de la réponse
-                prix = res_ml['prix_estime']
+                prix = res_ml["prix_estime"]
                 return (
                     f"Bonjour ! En tant que **Geo-Estate AI** (Moteur de secours), j'ai analysé votre demande.\n\n"
                     f"Grâce à notre modèle d'apprentissage statistique entraîné sur l'Île-de-France, "
@@ -179,7 +191,7 @@ class FallbackAgent:
                 )
             except Exception as e:
                 pass
-                
+
         # Message d'accueil et d'explication si les paramètres sont incomplets
         return (
             "Bonjour ! Je suis **Geo-Estate AI**, votre expert d'estimation immobilière en Île-de-France.\n\n"
@@ -190,12 +202,14 @@ class FallbackAgent:
             "2. Le **nombre de pièces** principales\n"
             "3. Le **code postal** à 5 chiffres en Île-de-France (ex: 92100, 75015)\n"
             "4. Le **type de bien** (*Maison* ou *Appartement*)\n\n"
-            "Exemple : *\"Estime un appartement de 65m2 avec 3 pièces à Boulogne 92100\"*"
+            'Exemple : *"Estime un appartement de 65m2 avec 3 pièces à Boulogne 92100"*'
         )
+
 
 # Test rapide en ligne de commande
 if __name__ == "__main__":
     import sys
+
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
     print("--- Test du FallbackAgent de secours ---")

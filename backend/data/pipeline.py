@@ -17,7 +17,7 @@ Usage :
 
 import argparse
 import io
-import openpyxl 
+import openpyxl
 import json
 import logging
 import os
@@ -55,12 +55,13 @@ def get_raw_file_path(filename: str) -> Path:
     local_path = (Path(__file__).parent / "raw" / filename).resolve()
     if local_path.exists():
         return local_path
-    
+
     root_path = (Path(__file__).parents[2] / "data" / "raw" / filename).resolve()
     if root_path.exists():
         return root_path
-        
+
     return local_path
+
 
 # DVF — fichiers annuels sur data.gouv.fr (format CSV)
 DVF_URL = (
@@ -81,12 +82,15 @@ def _get_json_with_retry(url: str, params: dict | None, max_retries: int = 6) ->
         r = requests.get(url, params=params, timeout=60)
         if r.status_code == 429:
             wait = int(r.headers.get("Retry-After", 5 * (attempt + 1)))
-            log.info(f"  429 Too Many Requests — pause {wait}s (tentative {attempt + 1}/{max_retries})")
+            log.info(
+                f"  429 Too Many Requests — pause {wait}s (tentative {attempt + 1}/{max_retries})"
+            )
             time.sleep(wait)
             continue
         r.raise_for_status()
         return r.json()
     raise RuntimeError("Nombre maximal de tentatives dépassé (429 persistant)")
+
 
 # Géorisques — API par commune (appel unitaire par code INSEE)
 GEORISQUES_URL = "https://georisques.gouv.fr/api/v1/gaspar/risques?code_insee={insee}"
@@ -101,6 +105,7 @@ DELINQUANCE_URL = (
 # 1. Téléchargement DVF
 # ---------------------------------------------------------------------------
 
+
 def download_dvf(dept: str, year: int, skip: bool = False) -> Path | None:
     dest = DATA_DIR / f"dvf_{dept}_{year}.csv.gz"
     if skip and dest.exists():
@@ -114,7 +119,9 @@ def download_dvf(dept: str, year: int, skip: bool = False) -> Path | None:
     try:
         r = requests.get(url, stream=True, timeout=120)
         if r.status_code == 404:
-            log.warning(f"  Année {year} non disponible pour le département {dept} (404 Not Found).")
+            log.warning(
+                f"  Année {year} non disponible pour le département {dept} (404 Not Found)."
+            )
             return None
         r.raise_for_status()
     except Exception as e:
@@ -171,6 +178,7 @@ def load_dvf(path: Path, dept: str) -> pd.DataFrame:
 # 2. Nettoyage DVF
 # ---------------------------------------------------------------------------
 
+
 def clean_dvf(df: pd.DataFrame) -> pd.DataFrame:
     log.info("Nettoyage DVF…")
     initial = len(df)
@@ -212,24 +220,33 @@ def clean_dvf(df: pd.DataFrame) -> pd.DataFrame:
 
     # Formater le code postal (chaîne de 5 caractères sans décimale)
     if "code_postal" in df.columns:
-        df["code_postal"] = df["code_postal"].astype(str).str.replace(r'\.0$', '', regex=True)
-        df["code_postal"] = df["code_postal"].apply(lambda x: x.zfill(5) if x not in ['nan', 'None', ''] else '')
+        df["code_postal"] = (
+            df["code_postal"].astype(str).str.replace(r"\.0$", "", regex=True)
+        )
+        df["code_postal"] = df["code_postal"].apply(
+            lambda x: x.zfill(5) if x not in ["nan", "None", ""] else ""
+        )
 
     # Renommer pour clarté
-    df = df.rename(columns={
-        "valeur_fonciere": "prix",
-        "surface_reelle_bati": "surface_m2",
-        "nombre_pieces_principales": "nb_pieces",
-        "type_local": "type_bien",
-    })
+    df = df.rename(
+        columns={
+            "valeur_fonciere": "prix",
+            "surface_reelle_bati": "surface_m2",
+            "nombre_pieces_principales": "nb_pieces",
+            "type_local": "type_bien",
+        }
+    )
 
-    log.info(f"  Lignes conservées : {len(df):,} / {initial:,} ({len(df)/initial*100:.1f}%)")
+    log.info(
+        f"  Lignes conservées : {len(df):,} / {initial:,} ({len(df)/initial*100:.1f}%)"
+    )
     return df.reset_index(drop=True)
 
 
 # ---------------------------------------------------------------------------
 # 3. Téléchargement & intégration DPE
 # ---------------------------------------------------------------------------
+
 
 def download_dpe(dept: str, skip: bool = False) -> Path | None:
     """
@@ -260,12 +277,16 @@ def download_dpe(dept: str, skip: bool = False) -> Path | None:
                 total = data.get("total", 0)
 
             rows.extend(data.get("results", []))
-            print(f"\r  {len(rows):,}/{total:,} lignes DPE récupérées", end="", flush=True)
+            print(
+                f"\r  {len(rows):,}/{total:,} lignes DPE récupérées", end="", flush=True
+            )
 
             url = data.get("next")
             params = None  # "next" contient déjà tous les paramètres de requête
             if url:
-                time.sleep(0.3)  # pause courtoise entre pages pour éviter le rate-limit (429)
+                time.sleep(
+                    0.3
+                )  # pause courtoise entre pages pour éviter le rate-limit (429)
     except Exception as e:
         print()
         log.warning(f"  Échec du téléchargement DPE {dept} : {e}")
@@ -275,7 +296,9 @@ def download_dpe(dept: str, skip: bool = False) -> Path | None:
     # Un total partiel (429 persistant, coupure réseau...) ne doit jamais être
     # sauvegardé comme s'il était complet : mieux vaut échouer proprement.
     if total and len(rows) < total:
-        log.warning(f"  Téléchargement DPE {dept} incomplet ({len(rows):,}/{total:,}) — fichier non sauvegardé")
+        log.warning(
+            f"  Téléchargement DPE {dept} incomplet ({len(rows):,}/{total:,}) — fichier non sauvegardé"
+        )
         return None
 
     if not rows:
@@ -332,12 +355,14 @@ def load_dpe(dept: str, skip: bool = False) -> pd.DataFrame:
 # 4. Enrichissement Géorisques (API par commune)
 # ---------------------------------------------------------------------------
 
+
 def fetch_georisques(codes_insee: list[str]) -> pd.DataFrame:
     """
     Interroge l'API Géorisques pour chaque code INSEE unique de manière parallélisée.
     Retourne un DataFrame code_insee → score_risque (0–10).
     """
     import concurrent.futures
+
     dest = DATA_DIR / "georisques_cache.json"
 
     # Charger le cache si existant (et filtrer les anciennes valeurs à 0.0/None erronées dues au bug précédent)
@@ -346,7 +371,9 @@ def fetch_georisques(codes_insee: list[str]) -> pd.DataFrame:
         try:
             with open(dest) as f:
                 raw_cache = json.load(f)
-                cache = {k: v for k, v in raw_cache.items() if v is not None and v != 0.0}
+                cache = {
+                    k: v for k, v in raw_cache.items() if v is not None and v != 0.0
+                }
         except Exception as e:
             log.warning(f"Erreur chargement cache géorisques : {e}")
 
@@ -381,22 +408,28 @@ def fetch_georisques(codes_insee: list[str]) -> pd.DataFrame:
     if nouveaux:
         # Utiliser ThreadPoolExecutor avec 15 workers pour paralléliser les appels d'API
         with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
-            future_to_insee = {executor.submit(fetch_single, ins): ins for ins in nouveaux}
-            
+            future_to_insee = {
+                executor.submit(fetch_single, ins): ins for ins in nouveaux
+            }
+
             count = 0
             for future in concurrent.futures.as_completed(future_to_insee):
                 insee, score = future.result()
                 cache[insee] = score
                 count += 1
-                
+
                 # Sauvegarder le cache régulièrement
                 if count % 50 == 0 or count == len(nouveaux):
                     try:
                         with open(dest, "w") as f:
                             json.dump(cache, f)
                     except Exception as e:
-                        log.warning(f"Erreur lors de l'écriture du cache géorisques : {e}")
-                    log.info(f"  Géorisques : {count}/{len(nouveaux)} communes traitées en parallèle")
+                        log.warning(
+                            f"Erreur lors de l'écriture du cache géorisques : {e}"
+                        )
+                    log.info(
+                        f"  Géorisques : {count}/{len(nouveaux)} communes traitées en parallèle"
+                    )
 
     # Sauvegarde finale
     try:
@@ -410,13 +443,16 @@ def fetch_georisques(codes_insee: list[str]) -> pd.DataFrame:
         results.append({"code_insee": code, "score_georisques": cache.get(code)})
 
     df = pd.DataFrame(results)
-    log.info(f"  Géorisques : {df['score_georisques'].notna().sum()} communes enrichies")
+    log.info(
+        f"  Géorisques : {df['score_georisques'].notna().sum()} communes enrichies"
+    )
     return df
 
 
 # ---------------------------------------------------------------------------
 # 5. Délinquance (par département)
 # ---------------------------------------------------------------------------
+
 
 def download_delinquance(skip: bool = False) -> Path | None:
     """
@@ -449,7 +485,9 @@ def load_delinquance(dept: str, skip: bool = False) -> pd.DataFrame:
     csv_dest = get_raw_file_path("delinquance_dep.csv")
     if not csv_dest.exists():
         # Rétrocompatibilité : ancien nom de fichier daté, s'il a été déposé à la main
-        legacy = get_raw_file_path("donnee-dep-data.gouv-2025-geographie2025-produit-le2026-01-22.csv")
+        legacy = get_raw_file_path(
+            "donnee-dep-data.gouv-2025-geographie2025-produit-le2026-01-22.csv"
+        )
         csv_dest = legacy if legacy.exists() else csv_dest
 
     if not csv_dest.exists():
@@ -461,22 +499,28 @@ def load_delinquance(dept: str, skip: bool = False) -> pd.DataFrame:
         log.info("Chargement délinquance depuis le fichier CSV officiel…")
         try:
             df = pd.read_csv(csv_dest, sep=";", dtype=str)
-            df['taux_pour_mille'] = df['taux_pour_mille'].astype(str).str.replace(',', '.').astype(float)
-            
+            df["taux_pour_mille"] = (
+                df["taux_pour_mille"].astype(str).str.replace(",", ".").astype(float)
+            )
+
             # Nettoyer et filtrer pour le département demandé
             dept_clean = dept.lstrip("0")
-            df['Code_departement_clean'] = df['Code_departement'].astype(str).str.lstrip("0").str.strip()
-            
-            df_dept = df[df['Code_departement_clean'] == dept_clean]
+            df["Code_departement_clean"] = (
+                df["Code_departement"].astype(str).str.lstrip("0").str.strip()
+            )
+
+            df_dept = df[df["Code_departement_clean"] == dept_clean]
             if not df_dept.empty:
                 # Prendre le taux moyen pour l'année la plus récente disponible
-                annee_max = df_dept['annee'].astype(int).max()
-                df_rec = df_dept[df_dept['annee'].astype(int) == annee_max]
-                mean_taux = df_rec['taux_pour_mille'].mean()
-                
+                annee_max = df_dept["annee"].astype(int).max()
+                df_rec = df_dept[df_dept["annee"].astype(int) == annee_max]
+                mean_taux = df_rec["taux_pour_mille"].mean()
+
                 # Normaliser le score sur 10 (taux moyen / 30 * 10)
                 score = min(round(mean_taux / 30 * 10, 1), 10.0)
-                log.info(f"  Score délinquance département {dept} (taux moyen {mean_taux:.2f} en {annee_max}) : {score}/10")
+                log.info(
+                    f"  Score délinquance département {dept} (taux moyen {mean_taux:.2f} en {annee_max}) : {score}/10"
+                )
                 return pd.DataFrame([{"departement": dept, "score_delinquance": score}])
         except Exception as e:
             log.warning(f"  Erreur lecture CSV délinquance : {e}")
@@ -487,8 +531,8 @@ def load_delinquance(dept: str, skip: bool = False) -> pd.DataFrame:
         log.info("Chargement délinquance depuis fichier Excel local…")
         try:
             # On tente de charger l'une des feuilles contenant des données réelles
-            df = pd.read_excel(dest, sheet_name='Services PN 2021', dtype=str)
-            
+            df = pd.read_excel(dest, sheet_name="Services PN 2021", dtype=str)
+
             dept_col = next((c for c in df.columns if "dep" in c.lower()), None)
             if not dept_col:
                 raise ValueError(f"Colonne département introuvable")
@@ -513,7 +557,7 @@ def load_delinquance(dept: str, skip: bool = False) -> pd.DataFrame:
                 score = min(round(taux / 30 * 10, 1), 10.0)
             else:
                 score = 5.0
-            
+
             log.info(f"  Score délinquance département {dept} : {score}/10")
             return pd.DataFrame([{"departement": dept, "score_delinquance": score}])
 
@@ -529,6 +573,7 @@ def load_delinquance(dept: str, skip: bool = False) -> pd.DataFrame:
 # 6. Fusion finale
 # ---------------------------------------------------------------------------
 
+
 def merge_all(
     dvf: pd.DataFrame,
     dpe: pd.DataFrame,
@@ -542,12 +587,16 @@ def merge_all(
     # Merge DPE (par code INSEE commune)
     if not dpe.empty and "code_insee" in dpe.columns:
         df = df.merge(dpe, on="code_insee", how="left")
-        log.info(f"  DPE mergé : {df['score_dpe_median'].notna().sum():,} lignes enrichies")
+        log.info(
+            f"  DPE mergé : {df['score_dpe_median'].notna().sum():,} lignes enrichies"
+        )
 
     # Merge Géorisques (par code INSEE commune)
     if not georisques.empty:
         df = df.merge(georisques, on="code_insee", how="left")
-        log.info(f"  Géorisques mergé : {df['score_georisques'].notna().sum():,} lignes enrichies")
+        log.info(
+            f"  Géorisques mergé : {df['score_georisques'].notna().sum():,} lignes enrichies"
+        )
 
     # Merge Délinquance (scalaire département)
     if not delinquance.empty and "score_delinquance" in delinquance.columns:
@@ -562,7 +611,9 @@ def merge_all(
             n_nan = df[col].isna().sum()
             df[col] = df[col].fillna(median_val)
             if n_nan > 0:
-                log.info(f"  {col} : {n_nan} NaN remplacés par médiane ({median_val:.1f})")
+                log.info(
+                    f"  {col} : {n_nan} NaN remplacés par médiane ({median_val:.1f})"
+                )
 
     log.info(f"  Dataset final : {len(df):,} lignes, {len(df.columns)} colonnes")
     return df
@@ -571,6 +622,7 @@ def merge_all(
 # ---------------------------------------------------------------------------
 # 7. Export
 # ---------------------------------------------------------------------------
+
 
 def export(df: pd.DataFrame, dept: str) -> Path:
     # Colonnes finales propres
@@ -613,6 +665,7 @@ def export(df: pd.DataFrame, dept: str) -> Path:
 # Rapport de qualité
 # ---------------------------------------------------------------------------
 
+
 def quality_report(df: pd.DataFrame) -> None:
     print("\n" + "=" * 55)
     print("  RAPPORT DE QUALITÉ — dataset_propre")
@@ -626,9 +679,13 @@ def quality_report(df: pd.DataFrame) -> None:
     if "score_dpe_median" in df.columns:
         print(f"  DPE médian (1=A, 7=G)   : {df['score_dpe_median'].median():>10.1f}")
     if "score_georisques" in df.columns:
-        print(f"  Score géorisques médian : {df['score_georisques'].median():>10.1f}/10")
+        print(
+            f"  Score géorisques médian : {df['score_georisques'].median():>10.1f}/10"
+        )
     print(f"  Valeurs manquantes      : {df.isna().sum().sum():>10,}")
-    print(f"  Période couverte        : {df['annee'].min():.0f} – {df['annee'].max():.0f}")
+    print(
+        f"  Période couverte        : {df['annee'].min():.0f} – {df['annee'].max():.0f}"
+    )
     print("=" * 55 + "\n")
 
 
@@ -636,14 +693,16 @@ def quality_report(df: pd.DataFrame) -> None:
 # Point d'entrée
 # ---------------------------------------------------------------------------
 
+
 def run(dept: str = "75", skip_download: bool = False) -> Path:
     log.info(f"=== EstimIA Pipeline — Département {dept} ===")
 
     # 1. DVF (Multi-années à partir de 2020)
     import datetime
+
     current_year = datetime.datetime.now().year
     years = list(range(2020, current_year + 1))
-    
+
     dvf_cleans = []
     for year in years:
         dvf_path = download_dvf(dept, year, skip=skip_download)
@@ -658,10 +717,14 @@ def run(dept: str = "75", skip_download: bool = False) -> Path:
             log.error(f"  Erreur lors de la lecture/nettoyage de l'année {year} : {e}")
 
     if not dvf_cleans:
-        raise ValueError(f"Aucune donnée DVF n'a pu être chargée pour le département {dept}")
+        raise ValueError(
+            f"Aucune donnée DVF n'a pu être chargée pour le département {dept}"
+        )
 
     dvf_clean = pd.concat(dvf_cleans, ignore_index=True)
-    log.info(f"  DVF total après concaténation et nettoyage multi-années : {len(dvf_clean):,} lignes")
+    log.info(
+        f"  DVF total après concaténation et nettoyage multi-années : {len(dvf_clean):,} lignes"
+    )
 
     # 2. DPE
     dpe = load_dpe(dept, skip=skip_download)

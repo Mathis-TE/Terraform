@@ -49,9 +49,9 @@ PA.pdf
 __pycache__/
 
 # Terraform
-infra/**/.terraform/
-infra/**/*.tfstate
-infra/**/*.tfstate.*
-infra/**/*.tfvars
-infra/**/*.tfvars.json
-infra/**/crash.log
+terraform/**/.terraform/
+terraform/**/*.tfstate
+terraform/**/*.tfstate.*
+terraform/**/*.tfvars
+terraform/**/*.tfvars.json
+terraform/**/crash.log

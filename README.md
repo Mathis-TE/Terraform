@@ -136,7 +136,7 @@ estimia/
 │       ├── cd-aws.yml              # Build, push ECR, déploiement ECS Fargate
 │       └── cd-azure.yml            # Build, push ACR, déploiement Container Apps
 │
-├── infra/                          # Terraform — deux clouds indépendants
+├── terraform/                       # Terraform — deux clouds indépendants
 │   ├── aws/                        # provisioning AWS (voir docs/aws-setup.md)
 │   │   ├── providers.tf
 │   │   ├── variables.tf
@@ -296,12 +296,12 @@ l'autre ; utilisez l'un, l'autre, ou les deux en parallèle.
   frontend, et fait un build Docker à blanc des deux images. Commun aux deux clouds.
 - **CD AWS** (`.github/workflows/cd-aws.yml`, [docs/aws-setup.md](docs/aws-setup.md)) :
   build + push sur Amazon ECR, patch de la task definition ECS, puis
-  `aws ecs update-service` sur les 2 services Fargate. Infra (`infra/aws/`) :
+  `aws ecs update-service` sur les 2 services Fargate. Infra (`terraform/aws/`) :
   ECR, bucket S3 (modèle ML), cluster ECS Fargate, ALB (2 listeners : 80 →
   frontend, 8080 → backend), rôles IAM.
 - **CD Azure** (`.github/workflows/cd-azure.yml`, [docs/azure-setup.md](docs/azure-setup.md)) :
   build + push sur Azure Container Registry, puis `az containerapp update`
-  sur les 2 Container Apps. Infra (`infra/azure/`) : ACR, Storage Account
+  sur les 2 Container Apps. Infra (`terraform/azure/`) : ACR, Storage Account
   (modèle ML), environnement Container Apps, 2 Container Apps.
 
 L'agent conversationnel s'appuie uniquement sur le `FallbackAgent`

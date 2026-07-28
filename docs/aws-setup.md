@@ -4,7 +4,7 @@ Ce guide décrit la mise en place **une seule fois** de l'infrastructure AWS,
 puis comment le pipeline CI/CD prend le relais à chaque push sur `main`.
 
 > Le projet peut être déployé sur AWS **ou** Azure (voir [docs/azure-setup.md](azure-setup.md)) —
-> les deux infras cohabitent dans des dossiers séparés (`infra/aws/`, `infra/azure/`)
+> les deux infras cohabitent dans des dossiers séparés (`terraform/aws/`, `terraform/azure/`)
 > et ne dépendent pas l'une de l'autre.
 
 ## Architecture cible
@@ -83,7 +83,7 @@ et un rôle à assumer, sans clé longue durée — non détaillé ici pour rest
 ## Étape 2 — Provisionner l'infrastructure avec Terraform
 
 ```bash
-cd infra/aws
+cd terraform/aws
 terraform init
 terraform plan
 terraform apply
@@ -109,7 +109,7 @@ Après avoir généré les artefacts en local (`python train_model.py` puis
 `python scripts/create_lookup_table.py`, voir le README principal) :
 
 ```bash
-BUCKET=$(terraform -chdir=infra/aws output -raw s3_bucket_name)
+BUCKET=$(terraform -chdir=terraform/aws output -raw s3_bucket_name)
 
 aws s3 cp backend/model/ "s3://$BUCKET/" --recursive
 ```
@@ -132,7 +132,7 @@ ou un simple push CI/CD) pour qu'il retélécharge les fichiers au démarrage.
 
 | Nom | Valeur | Source |
 |-----|--------|--------|
-| `AWS_REGION` | `eu-west-3` | `infra/aws/variables.tf` (`aws_region`) |
+| `AWS_REGION` | `eu-west-3` | `terraform/aws/variables.tf` (`aws_region`) |
 | `AWS_ECS_CLUSTER` | `estimia-prod-cluster` | `terraform output ecs_cluster_name` |
 | `AWS_ECR_BACKEND_REPO` | `estimia-prod-backend` | nom du dépôt ECR backend |
 | `AWS_ECR_FRONTEND_REPO` | `estimia-prod-frontend` | nom du dépôt ECR frontend |
@@ -164,7 +164,7 @@ Vous pouvez aussi le lancer manuellement depuis l'onglet **Actions** du repo
 ### 1. Terraform reflète-t-il l'état réel ?
 
 ```bash
-cd infra/aws
+cd terraform/aws
 terraform plan   # doit répondre "No changes." après un apply propre
 terraform state list
 ```
@@ -172,8 +172,8 @@ terraform state list
 ### 2. Les services ECS tournent-ils avec la bonne image ?
 
 ```bash
-CLUSTER=$(terraform -chdir=infra/aws output -raw ecs_cluster_name)
-BACKEND_SVC=$(terraform -chdir=infra/aws output -raw ecs_backend_service_name)
+CLUSTER=$(terraform -chdir=terraform/aws output -raw ecs_cluster_name)
+BACKEND_SVC=$(terraform -chdir=terraform/aws output -raw ecs_backend_service_name)
 
 aws ecs describe-services --cluster "$CLUSTER" --services "$BACKEND_SVC" \
   --query 'services[0].{status:status, running:runningCount, desired:desiredCount, taskDef:taskDefinition}'
@@ -187,8 +187,8 @@ vers la révision créée par le dernier run GitHub Actions.
 ### 3. L'application répond-elle vraiment ?
 
 ```bash
-curl -s "$(terraform -chdir=infra/aws output -raw backend_url)/"
-curl -s -o /dev/null -w "%{http_code}\n" "$(terraform -chdir=infra/aws output -raw frontend_url)/"
+curl -s "$(terraform -chdir=terraform/aws output -raw backend_url)/"
+curl -s -o /dev/null -w "%{http_code}\n" "$(terraform -chdir=terraform/aws output -raw frontend_url)/"
 ```
 
 Le premier doit renvoyer `"modele_ml_idf": "Charge avec succes"` (une fois
@@ -222,9 +222,9 @@ gh run view <run-id> --log
 
 ## Notes
 
-- **État Terraform** : stocké en local (`infra/aws/terraform.tfstate`,
+- **État Terraform** : stocké en local (`terraform/aws/terraform.tfstate`,
   gitignored) par défaut. Pour un travail à plusieurs, migrez vers un backend
-  `s3` distant (voir le commentaire dans `infra/aws/providers.tf`) une fois le
+  `s3` distant (voir le commentaire dans `terraform/aws/providers.tf`) une fois le
   bucket créé.
 - **Pas de scale-to-zero** : contrairement à Azure Container Apps, Fargate ne
   descend pas à 0 tâche automatiquement au repos — `desired_count = 1` sur

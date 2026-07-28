@@ -4,7 +4,7 @@ Ce guide décrit la mise en place **une seule fois** de l'infrastructure Azure,
 puis comment le pipeline CI/CD prend le relais à chaque push sur `main`.
 
 > Le projet peut être déployé sur Azure **ou** AWS (voir [docs/aws-setup.md](aws-setup.md)) —
-> les deux infras cohabitent dans des dossiers séparés (`infra/azure/`, `infra/aws/`)
+> les deux infras cohabitent dans des dossiers séparés (`terraform/azure/`, `terraform/aws/`)
 > et ne dépendent pas l'une de l'autre.
 
 ## Architecture cible
@@ -62,7 +62,7 @@ elle ne sera plus jamais réaffichée.
 ## Étape 2 — Provisionner l'infrastructure avec Terraform
 
 ```bash
-cd infra/azure
+cd terraform/azure
 terraform init
 terraform plan
 terraform apply
@@ -88,7 +88,7 @@ Après avoir généré les artefacts en local (`python train_model.py` puis
 `python scripts/create_lookup_table.py`, voir le README principal) :
 
 ```bash
-STORAGE_ACCOUNT=$(terraform -chdir=infra/azure output -raw storage_account_name)
+STORAGE_ACCOUNT=$(terraform -chdir=terraform/azure output -raw storage_account_name)
 
 az storage blob upload-batch \
   --account-name "$STORAGE_ACCOUNT" \
@@ -141,7 +141,7 @@ Vous pouvez aussi le lancer manuellement depuis l'onglet **Actions** du repo
 ### 1. L'infrastructure Terraform est-elle conforme à ce qui est déclaré ?
 
 ```bash
-cd infra/azure
+cd terraform/azure
 terraform validate      # vérifie la syntaxe/schéma (ne nécessite pas d'être connecté)
 terraform plan           # nécessite `az login` au préalable
 ```
@@ -159,9 +159,9 @@ terraform state list           # liste des ressources gérées
 ### 2. Les Container Apps tournent-elles avec la bonne image ?
 
 ```bash
-RG=$(terraform -chdir=infra/azure output -raw resource_group_name)
-BACKEND=$(terraform -chdir=infra/azure output -raw backend_app_name)
-FRONTEND=$(terraform -chdir=infra/azure output -raw frontend_app_name)
+RG=$(terraform -chdir=terraform/azure output -raw resource_group_name)
+BACKEND=$(terraform -chdir=terraform/azure output -raw backend_app_name)
+FRONTEND=$(terraform -chdir=terraform/azure output -raw frontend_app_name)
 
 az containerapp show -n "$BACKEND" -g "$RG" \
   --query "{image:properties.template.containers[0].image, fqdn:properties.configuration.ingress.fqdn, provisioningState:properties.provisioningState}"
@@ -176,8 +176,8 @@ correspondre au tag d'image poussé par le dernier run GitHub Actions.
 ### 3. L'application répond-elle vraiment ?
 
 ```bash
-curl -s "$(terraform -chdir=infra/azure output -raw backend_fqdn)/"
-curl -s -o /dev/null -w "%{http_code}\n" "$(terraform -chdir=infra/azure output -raw frontend_fqdn)/"
+curl -s "$(terraform -chdir=terraform/azure output -raw backend_fqdn)/"
+curl -s -o /dev/null -w "%{http_code}\n" "$(terraform -chdir=terraform/azure output -raw frontend_fqdn)/"
 ```
 
 Le premier doit renvoyer le JSON de statut avec `"modele_ml_idf": "Charge avec succes"`
@@ -206,11 +206,11 @@ gh run view <run-id> --log
 
 ## Notes
 
-- **État Terraform** : stocké en local (`infra/azure/terraform.tfstate`,
+- **État Terraform** : stocké en local (`terraform/azure/terraform.tfstate`,
   gitignored) par défaut. Pour un travail à plusieurs, migrez vers un backend
-  `azurerm` distant (voir le commentaire dans `infra/azure/providers.tf`) une
+  `azurerm` distant (voir le commentaire dans `terraform/azure/providers.tf`) une
   fois le storage account créé.
-- **SAS token** : expire le 31/12/2030 par défaut (`infra/azure/variables.tf`,
+- **SAS token** : expire le 31/12/2030 par défaut (`terraform/azure/variables.tf`,
   `sas_expiry`). À renouveler avant cette date via `terraform apply` avec une
   nouvelle valeur.
 - **Coûts** : ACR Basic (~5€/mois), Container Apps en scale-to-zero

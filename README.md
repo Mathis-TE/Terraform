@@ -50,7 +50,8 @@ Backend — Python FastAPI            (port 8000)
 - Fetch API
 
 **Infra**
-- Docker, AWS EC2 t3.micro (Free Tier)
+- Docker, Terraform — déployable sur **Azure** (Container Apps, ACR, Blob Storage)
+- CI/CD : GitHub Actions
 
 ---
 
@@ -129,8 +130,21 @@ estimia/
 │   ├── carte_prix_idf.html
 │   └── fig_evolution_prix.html
 │
-├── Dockerfile
-├── docker-compose.yml
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                  # Lint + build backend/frontend sur chaque PR
+│       └── cd-azure.yml            # Build, push ACR, déploiement Container Apps
+│
+├── terraform/
+│   └── azure/                      # provisioning Azure (voir docs/azure-setup.md)
+│       ├── providers.tf
+│       ├── variables.tf
+│       ├── main.tf
+│       └── outputs.tf
+│
+├── backend/Dockerfile
+├── frontend/Dockerfile
+├── docker-compose.yml               # Lancement local complet (backend + frontend)
 ├── pyproject.toml                  # Config Ruff
 └── .gitignore
 ```
@@ -247,11 +261,38 @@ Application : `http://localhost:3000`
 
 ---
 
-### Docker (déploiement complet en une commande)
+### Docker (déploiement local complet en une commande)
 
 ```bash
 docker-compose up --build
 ```
+
+- Frontend : `http://localhost:3000`
+- Backend : `http://localhost:8000`
+
+Pour que l'estimation ML fonctionne, placez les 3 fichiers `.pkl` générés à
+l'étape 4-5 dans `backend/model/` : `docker-compose.yml` monte ce dossier en
+volume dans le conteneur backend (pas besoin d'Azure en local).
+`backend/scripts/download_model.py` détecte automatiquement, au démarrage,
+si les variables d'environnement Azure sont renseignées.
+
+---
+
+## CI/CD & déploiement cloud (Azure)
+
+Le projet se déploie sur **Azure** via Terraform + GitHub Actions.
+
+- **CI** (`.github/workflows/ci.yml`) : à chaque push/PR, installe les
+  dépendances, vérifie que l'API s'importe sans erreur, lint + build le
+  frontend, et fait un build Docker à blanc des deux images.
+- **CD Azure** (`.github/workflows/cd-azure.yml`, [docs/azure-setup.md](docs/azure-setup.md)) :
+  build + push sur Azure Container Registry, puis `az containerapp update`
+  sur les 2 Container Apps. Infra (`terraform/azure/`) : ACR, Storage Account
+  (modèle ML), environnement Container Apps, 2 Container Apps.
+
+L'agent conversationnel s'appuie uniquement sur le `FallbackAgent`
+déterministe en production (Ollama n'est pas déployé — trop lourd pour les
+paliers de calcul les plus bas d'Azure Container Apps).
 
 ---
 
@@ -332,7 +373,7 @@ python generate_eda_plots.py
 | `feature/agent-tools` | tools.py + lookup table ✅ |
 | `feature/agent-llm` | LangChain + FallbackAgent ✅ |
 | `feature/frontend` | Next.js ✅ |
-| `feature/deployment` | Docker + AWS 🔲 |
+| `feature/deployment` | Docker + Azure ✅ |
 
 ### Format des commits
 
@@ -355,7 +396,7 @@ chore: update requirements.txt
 - [x] Phase 3 — tools.py + table de correspondance géographique
 - [x] Phase 4 — Agent LangChain + FallbackAgent déterministe
 - [x] Phase 5 — Frontend Next.js (formulaire, carte Leaflet, chatbot)
-- [ ] Phase 6 — Déploiement AWS EC2 + Docker
+- [x] Phase 6 — Dockerisation + CI/CD GitHub Actions + déploiement Azure Container Apps (Terraform)
 
 ---
 

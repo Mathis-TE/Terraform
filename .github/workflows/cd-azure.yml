@@ -1,0 +1,95 @@
+name: CD — Déploiement Azure Container Apps
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/cd-azure.yml"
+  workflow_dispatch: {}
+
+# Empêche deux déploiements concurrents de se marcher dessus
+concurrency:
+  group: cd-azure
+  cancel-in-progress: false
+
+env:
+  RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
+  BACKEND_APP_NAME: ${{ vars.AZURE_BACKEND_APP_NAME }}
+  FRONTEND_APP_NAME: ${{ vars.AZURE_FRONTEND_APP_NAME }}
+
+jobs:
+  deploy-backend:
+    runs-on: ubuntu-latest
+    outputs:
+      backend_fqdn: ${{ steps.fqdn.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Connexion Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Connexion à Azure Container Registry
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Build & push image backend
+        run: |
+          IMAGE="$ACR_NAME.azurecr.io/estimia-backend:${{ github.sha }}"
+          docker build -t "$IMAGE" -t "$ACR_NAME.azurecr.io/estimia-backend:latest" ./backend
+          docker push "$IMAGE"
+          docker push "$ACR_NAME.azurecr.io/estimia-backend:latest"
+
+      - name: Déployer la Container App backend
+        run: |
+          az containerapp update \
+            --name "$BACKEND_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$ACR_NAME.azurecr.io/estimia-backend:${{ github.sha }}"
+
+      - name: Récupérer l'URL publique du backend
+        id: fqdn
+        run: |
+          FQDN=$(az containerapp show \
+            --name "$BACKEND_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo "url=https://$FQDN" >> "$GITHUB_OUTPUT"
+
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Connexion Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Connexion à Azure Container Registry
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Build & push image frontend
+        # NEXT_PUBLIC_API_URL est figé dans le bundle JS au build : on lui passe
+        # l'URL publique du backend qui vient d'être (re)déployé.
+        run: |
+          BACKEND_URL="${{ needs.deploy-backend.outputs.backend_fqdn }}"
+          IMAGE="$ACR_NAME.azurecr.io/estimia-frontend:${{ github.sha }}"
+          docker build \
+            --build-arg NEXT_PUBLIC_API_URL="$BACKEND_URL" \
+            -t "$IMAGE" \
+            -t "$ACR_NAME.azurecr.io/estimia-frontend:latest" \
+            ./frontend
+          docker push "$IMAGE"
+          docker push "$ACR_NAME.azurecr.io/estimia-frontend:latest"
+
+      - name: Déployer la Container App frontend
+        run: |
+          az containerapp update \
+            --name "$FRONTEND_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$ACR_NAME.azurecr.io/estimia-frontend:${{ github.sha }}"

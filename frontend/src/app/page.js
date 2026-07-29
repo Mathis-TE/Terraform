@@ -13,7 +13,7 @@ export default function Home() {
   const [loadingChat, setLoadingChat] = useState(false);
   const [apiOnline, setApiOnline] = useState("checking"); // 'checking' | 'online' | 'offline'
 
-  const BACKEND_URL = "http://localhost:8000";
+  const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   // Check FastAPI backend server connectivity on mount
   const checkApiStatus = async () => {

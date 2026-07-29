@@ -38,3 +38,11 @@ output "storage_sas_token" {
   value     = data.azurerm_storage_account_sas.models_ro.sas
   sensitive = true
 }
+
+output "key_vault_name" {
+  value = azurerm_key_vault.this.name
+}
+
+output "key_vault_uri" {
+  value = azurerm_key_vault.this.vault_uri
+}

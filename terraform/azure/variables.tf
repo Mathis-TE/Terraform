@@ -13,7 +13,7 @@ variable "environment" {
 variable "location" {
   description = "Région Azure de déploiement."
   type        = string
-  default     = "francecentral"
+  default     = "spaincentral"
 }
 
 variable "backend_placeholder_image" {

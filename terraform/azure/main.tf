@@ -1,7 +1,7 @@
 locals {
-  name_prefix = "${var.project}-${var.environment}"
+  name_prefix = "${var.project}-${var.environment}2"
   # Le nom d'un storage account doit être global, 3-24 caractères, alphanumérique minuscule.
-  storage_name = substr(replace("${var.project}st${var.environment}", "-", ""), 0, 24)
+  storage_name = substr(replace("${var.project}st${var.environment}2", "-", ""), 0, 24)
 }
 
 resource "azurerm_resource_group" "this" {

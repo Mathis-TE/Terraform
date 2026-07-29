@@ -7,8 +7,8 @@ data "azurerm_client_config" "current" {}
 
 resource "azurerm_key_vault" "kv" {
   name                = "kv-${local.name_prefix}"
-  resource_group_name = azurerm_resource_group.kv.name
-  location            = azurerm_resource_group.kv.location
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
   tenant_id           = data.azurerm_client_config.current.tenant_id
   sku_name            = "standard"
 

@@ -45,7 +45,7 @@ export default function EstimationResult({ estimation }) {
         <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>📊</div>
         <h3>En attente de saisie</h3>
         <p style={{ fontSize: "0.9rem", marginTop: "0.5rem", maxWidth: "280px" }}>
-          Remplissez le formulaire à gauche pour lancer le modèle d'estimation statistique en temps réel.
+          Remplissez le formulaire à gauche pour lancer le modèle d&apos;estimation statistique en temps réel.
         </p>
       </div>
     );

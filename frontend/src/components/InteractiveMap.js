@@ -34,7 +34,7 @@ export default function InteractiveMap({ latitude, longitude, estimation }) {
           </svg>
           <h3>Localisation géographique</h3>
           <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.5rem", maxWidth: "250px" }}>
-            La carte s'affichera et se centrera sur la zone du bien dès qu'une estimation sera calculée.
+            La carte s&apos;affichera et se centrera sur la zone du bien dès qu&apos;une estimation sera calculée.
           </p>
         </div>
       ) : (

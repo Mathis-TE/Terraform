@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import EstimationForm from "@/components/EstimationForm";
 import EstimationResult from "@/components/EstimationResult";
 import InteractiveMap from "@/components/InteractiveMap";
@@ -16,7 +16,7 @@ export default function Home() {
   const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   // Check FastAPI backend server connectivity on mount
-  const checkApiStatus = async () => {
+  const checkApiStatus = useCallback(async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/`);
       if (res.ok) {
@@ -27,14 +27,15 @@ export default function Home() {
     } catch (err) {
       setApiOnline("offline");
     }
-  };
+  }, [BACKEND_URL]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- vérification initiale du statut au montage, suivie du polling ci-dessous
     checkApiStatus();
     // Periodically poll API status every 10 seconds to maintain status sync
     const interval = setInterval(checkApiStatus, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [checkApiStatus]);
 
   const handleEstimateSubmit = async (formData) => {
     setLoadingEstimate(true);
@@ -142,7 +143,7 @@ export default function Home() {
           className={`tab-btn ${activeTab === "estimate" ? "active" : ""}`}
           onClick={() => setActiveTab("estimate")}
         >
-          📊 Calculateur d'Estimation
+          📊 Calculateur d&apos;Estimation
         </button>
         <button 
           className={`tab-btn ${activeTab === "chatbot" ? "active" : ""}`}

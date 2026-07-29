@@ -45,10 +45,15 @@ jobs:
 
       - name: Déployer la Container App backend
         run: |
-          az containerapp update \
-            --name "$BACKEND_APP_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --image "$ACR_NAME.azurecr.io/estimia-backend:${{ github.sha }}"
+          if az containerapp show --name "$BACKEND_APP_NAME" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
+            az containerapp update \
+              --name "$BACKEND_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --image "$ACR_NAME.azurecr.io/estimia-backend:${{ github.sha }}"
+          else
+            echo "Container App backend introuvable ; vérifiez l’infrastructure Terraform." >&2
+            exit 1
+          fi
 
       - name: Récupérer l'URL publique du backend
         id: fqdn
@@ -89,7 +94,12 @@ jobs:
 
       - name: Déployer la Container App frontend
         run: |
-          az containerapp update \
-            --name "$FRONTEND_APP_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --image "$ACR_NAME.azurecr.io/estimia-frontend:${{ github.sha }}"
+          if az containerapp show --name "$FRONTEND_APP_NAME" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
+            az containerapp update \
+              --name "$FRONTEND_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --image "$ACR_NAME.azurecr.io/estimia-frontend:${{ github.sha }}"
+          else
+            echo "Container App frontend introuvable ; vérifiez l’infrastructure Terraform." >&2
+            exit 1
+          fi

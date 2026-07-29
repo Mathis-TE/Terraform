@@ -1,13 +1,13 @@
 output "resource_group_name" {
-  value = azurerm_resource_group.this.name
+  value = azurerm_resource_group.rg.name
 }
 
 output "acr_login_server" {
-  value = azurerm_container_registry.this.login_server
+  value = azurerm_container_registry.acr.login_server
 }
 
 output "acr_name" {
-  value = azurerm_container_registry.this.name
+  value = azurerm_container_registry.acr.name
 }
 
 output "backend_app_name" {
@@ -40,9 +40,9 @@ output "storage_sas_token" {
 }
 
 output "key_vault_name" {
-  value = azurerm_key_vault.this.name
+  value = azurerm_key_vault.kv.name
 }
 
 output "key_vault_uri" {
-  value = azurerm_key_vault.this.vault_uri
+  value = azurerm_key_vault.kv.vault_uri
 }

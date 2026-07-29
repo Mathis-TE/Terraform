@@ -7,8 +7,8 @@ data "azurerm_client_config" "current" {}
 
 resource "azurerm_key_vault" "kv" {
   name                = "kv-${local.name_prefix}"
-  resource_group_name = azurerm_resource_group.kv.name
-  location            = azurerm_resource_group.kv.location
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
   tenant_id           = data.azurerm_client_config.current.tenant_id
   sku_name            = "standard"
 
@@ -26,7 +26,7 @@ resource "azurerm_key_vault" "kv" {
 
 resource "azurerm_key_vault_secret" "acr_admin_password" {
   name         = "acr-admin-password"
-  value        = azurerm_container_registry.this.admin_password
+  value        = azurerm_container_registry.acr.admin_password
   key_vault_id = azurerm_key_vault.kv.id
 }
 

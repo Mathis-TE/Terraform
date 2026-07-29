@@ -4,7 +4,7 @@ locals {
   storage_name = substr(replace("${var.project}st${var.environment}", "-", ""), 0, 24)
 }
 
-resource "azurerm_resource_group" "this" {
+resource "azurerm_resource_group" "rg {
   name     = "rg-${local.name_prefix}"
   location = var.location
 }
@@ -12,10 +12,10 @@ resource "azurerm_resource_group" "this" {
 # ---------------------------------------------------------------------------
 # Registre de conteneurs (images backend/frontend poussées par la CI/CD)
 # ---------------------------------------------------------------------------
-resource "azurerm_container_registry" "this" {
+resource "azurerm_container_registry" "acr" {
   name                = replace("acr${local.name_prefix}", "-", "")
-  resource_group_name = azurerm_resource_group.this.name
-  location            = azurerm_resource_group.this.location
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
   sku                 = "Basic"
   admin_enabled       = true
 }
@@ -25,8 +25,8 @@ resource "azurerm_container_registry" "this" {
 # ---------------------------------------------------------------------------
 resource "azurerm_storage_account" "models" {
   name                     = local.storage_name
-  resource_group_name      = azurerm_resource_group.this.name
-  location                 = azurerm_resource_group.this.location
+  resource_group_name      = azurerm_resource_group.rg.name
+  location                 = azurerm_resource_group.rg.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
 }
@@ -76,19 +76,19 @@ data "azurerm_storage_account_sas" "models_ro" {
 # ---------------------------------------------------------------------------
 # Environnement Azure Container Apps
 # ---------------------------------------------------------------------------
-resource "azurerm_log_analytics_workspace" "this" {
+resource "azurerm_log_analytics_workspace" "log" {
   name                = "log-${local.name_prefix}"
-  resource_group_name = azurerm_resource_group.this.name
-  location            = azurerm_resource_group.this.location
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
   sku                 = "PerGB2018"
   retention_in_days   = 30
 }
 
-resource "azurerm_container_app_environment" "this" {
+resource "azurerm_container_app_environment" "cae" {
   name                       = "cae-${local.name_prefix}"
-  resource_group_name        = azurerm_resource_group.this.name
-  location                   = azurerm_resource_group.this.location
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.this.id
+  resource_group_name        = azurerm_resource_group.rg.name
+  location                   = azurerm_resource_group.rg.location
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.log.id
 }
 
 # ---------------------------------------------------------------------------
@@ -96,8 +96,8 @@ resource "azurerm_container_app_environment" "this" {
 # ---------------------------------------------------------------------------
 resource "azurerm_container_app" "backend" {
   name                         = "${local.name_prefix}-backend"
-  container_app_environment_id = azurerm_container_app_environment.this.id
-  resource_group_name          = azurerm_resource_group.this.name
+  container_app_environment_id = azurerm_container_app_environment.cae.id
+  resource_group_name          = azurerm_resource_group.rg.name
   revision_mode                = "Single"
 
   template {
@@ -134,12 +134,12 @@ resource "azurerm_container_app" "backend" {
 
   secret {
     name  = "registry-password"
-    value = azurerm_container_registry.this.admin_password
+    value = azurerm_container_registry.acr.admin_password
   }
 
   registry {
-    server               = azurerm_container_registry.this.login_server
-    username             = azurerm_container_registry.this.admin_username
+    server               = azurerm_container_registry.acr.login_server
+    username             = azurerm_container_registry.acr.admin_username
     password_secret_name = "registry-password"
   }
 
@@ -165,8 +165,8 @@ resource "azurerm_container_app" "backend" {
 # ---------------------------------------------------------------------------
 resource "azurerm_container_app" "frontend" {
   name                         = "${local.name_prefix}-frontend"
-  container_app_environment_id = azurerm_container_app_environment.this.id
-  resource_group_name          = azurerm_resource_group.this.name
+  container_app_environment_id = azurerm_container_app_environment.cae.id
+  resource_group_name          = azurerm_resource_group.rg.name
   revision_mode                = "Single"
 
   template {
@@ -183,12 +183,12 @@ resource "azurerm_container_app" "frontend" {
 
   secret {
     name  = "registry-password"
-    value = azurerm_container_registry.this.admin_password
+    value = azurerm_container_registry.acr.admin_password
   }
 
   registry {
-    server               = azurerm_container_registry.this.login_server
-    username             = azurerm_container_registry.this.admin_username
+    server               = azurerm_container_registry.acr.login_server
+    username             = azurerm_container_registry.acr.admin_username
     password_secret_name = "registry-password"
   }
 

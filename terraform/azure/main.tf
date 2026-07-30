@@ -4,7 +4,7 @@ locals {
   storage_name = substr(replace("${var.project}st${var.environment}", "-", ""), 0, 24)
 }
 
-resource "azurerm_resource_group" "rg {
+resource "azurerm_resource_group" "rg" {
   name     = "rg-${local.name_prefix}"
   location = var.location
 }
@@ -127,14 +127,21 @@ resource "azurerm_container_app" "backend" {
     max_replicas = 2
   }
 
-  secret {
-    name  = "storage-sas-token"
-    value = data.azurerm_storage_account_sas.models_ro.sas
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.aca.id]
   }
 
   secret {
-    name  = "registry-password"
-    value = azurerm_container_registry.acr.admin_password
+    name                = "storage-sas-token"
+    identity            = azurerm_user_assigned_identity.aca.id
+    key_vault_secret_id = azurerm_key_vault_secret.storage_sas_token.versionless_id
+  }
+
+  secret {
+    name                = "registry-password"
+    identity            = azurerm_user_assigned_identity.aca.id
+    key_vault_secret_id = azurerm_key_vault_secret.acr_admin_password.versionless_id
   }
 
   registry {
@@ -158,6 +165,8 @@ resource "azurerm_container_app" "backend" {
   lifecycle {
     ignore_changes = [template[0].container[0].image]
   }
+
+  depends_on = [azurerm_key_vault_access_policy.aca]
 }
 
 # ---------------------------------------------------------------------------
@@ -181,9 +190,15 @@ resource "azurerm_container_app" "frontend" {
     max_replicas = 2
   }
 
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.aca.id]
+  }
+
   secret {
-    name  = "registry-password"
-    value = azurerm_container_registry.acr.admin_password
+    name                = "registry-password"
+    identity            = azurerm_user_assigned_identity.aca.id
+    key_vault_secret_id = azurerm_key_vault_secret.acr_admin_password.versionless_id
   }
 
   registry {
@@ -207,4 +222,6 @@ resource "azurerm_container_app" "frontend" {
   lifecycle {
     ignore_changes = [template[0].container[0].image]
   }
+
+  depends_on = [azurerm_key_vault_access_policy.aca]
 }

@@ -35,3 +35,17 @@ resource "azurerm_key_vault_secret" "storage_sas_token" {
   value        = data.azurerm_storage_account_sas.models_ro.sas
   key_vault_id = azurerm_key_vault.kv.id
 }
+
+resource "azurerm_user_assigned_identity" "aca" {
+  name                = "id-${local.name_prefix}-aca"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+}
+
+resource "azurerm_key_vault_access_policy" "aca" {
+  key_vault_id = azurerm_key_vault.kv.id
+  tenant_id    = data.azurerm_client_config.current.tenant_id
+  object_id    = azurerm_user_assigned_identity.aca.principal_id
+
+  secret_permissions = ["Get"]
+}

@@ -4,7 +4,7 @@ locals {
   storage_name = substr(replace("${var.project}st${var.environment}", "-", ""), 0, 24)
 }
 
-resource "azurerm_resource_group" "rg {
+resource "azurerm_resource_group" "rg" {
   name     = "rg-${local.name_prefix}"
   location = var.location
 }

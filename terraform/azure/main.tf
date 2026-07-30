@@ -173,7 +173,7 @@ resource "azurerm_container_app" "backend" {
 # Container App — Frontend Next.js
 # ---------------------------------------------------------------------------
 resource "azurerm_container_app" "frontend" {
-  name                         = "${local.name_prefix}-frontend"
+  name                         = "${local.name_prefix}-frontend_v2"
   container_app_environment_id = azurerm_container_app_environment.cae.id
   resource_group_name          = azurerm_resource_group.rg.name
   revision_mode                = "Single"
